@@ -1,0 +1,11 @@
+{
+  "cache": { "name": "Test" },
+  "layers": {
+    "osm": {
+      "provider": {"name": "mbtiles", "tileset": "/export/tile/osm-bright.mbtiles"},
+      "projection": "spherical mercator",
+      "allowed origin": "*",
+      "maximum cache age": 604800
+    }
+  }
+}
