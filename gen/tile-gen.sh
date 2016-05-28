@@ -36,7 +36,7 @@ export DBDIR="${DBDIR:-${BUILDROOT}/pg}"
 export STYLEDIR="${STYLEDIR:-${BUILDROOT}/styles}"
 export TMPDIR="${TMPDIR:-${CACHEDIR}}"
 
-export IMPORTER="${IMPORTER:-osm2pgsql}"
+export IMPORTER="${IMPORTER:-imposm}"
 export THREADS="${THREADS:-8}"
 export MAXZOOM="${MAXZOOM:-12}"
 
@@ -201,9 +201,9 @@ import_planet_imposm() {
 setup_style() {
   LOG "setting up map style"
   mkdir -p "${STYLEDIR}"
-  (cd /opt/osm/osm-bright && ./make.py)
-  (cd "${STYLEDIR}/osmbright" && /opt/osm/node_modules/carto/bin/carto -l -n project.mml > project.xml)
-  (cd "${DATADIR}" && shapeindex *.shp)
+  (cd /opt/osm/osm-bright && ./make.py) || return 1
+  (cd "${STYLEDIR}/osmbright" && /opt/osm/node_modules/carto/bin/carto -l -n project.mml > project.xml) || return 1
+  (cd "${DATADIR}" && shapeindex *.shp) || return 1
 }
 
 start_renderer() {
@@ -215,8 +215,11 @@ render_tiles() {
     export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
     LOG "rendering tiles to: ${TILEROOT}/osm-bright"
     /opt/osm/render-list.pl "${MAXZOOM}" > "${TMPDIR}/render-list.txt"
+    mkdir -p "${TILEROOT}/osm-bright"
+    chmod 1777 "${TILEROOT}/osm-bright"
     echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
     (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'MAPNIK_FONT_PATH=$MAPNIK_FONT_PATH' 'SRC=mapnik://${STYLEDIR}/osmbright/project.xml' 'DST=file://${TILEROOT}/osm-bright' xargs -a '${TMPDIR}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
+    echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
     mark tiles
   fi
 }
