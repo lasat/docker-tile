@@ -83,3 +83,5 @@ COPY postgres.conf /opt/osm/
 COPY render-list.pl /opt/osm/
 COPY tile-gen.sh /opt/osm/
 COPY tl-render.sh /opt/osm/
+
+CMD [ "/opt/osm/tile-gen.sh" ]
