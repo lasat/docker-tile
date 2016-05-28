@@ -28,13 +28,21 @@ set -x
 
 umask 022
 
+export BUILDROOT="${BUILDROOT:-/export/build}"
+export TILEROOT="${TILEROOT:-/export/tile}"
+export CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"
+export DATADIR="${STYLEDIR:-${BUILDROOT}/data}"
+export DBDIR="${DBDIR:-${BUILDROOT}/pg}"
+export STYLEDIR="${STYLEDIR:-${BUILDROOT}/styles}"
+export TMPDIR="${TMPDIR:-${CACHEDIR}}"
+
+export IMPORTER="${IMPORTER:-osm2pgsql}"
+export THREADS="${THREADS:-8}"
+export MAXZOOM="${MAXZOOM:-12}"
+
 MIRROR="${MIRROR:-http://ftp.osuosl.org/pub/openstreetmap/pbf/planet-latest.osm.pbf}"
-BUILDROOT="${BUILDROOT:-/export/build}"
-TILEROOT="${TILEROOT:-/export/tile}"
-THREADS="${THREADS:-8}"
 PLANETPBF="${PLANETPBF:-${BUILDROOT}/planet-latest.osm.pbf}"
 PGBIN="${PGBIN:-/usr/lib/postgresql/9.5/bin}"
-MAXZOOM="${MAXZOOM:-12}"
 
 TMPFILE=""
 
@@ -76,7 +84,8 @@ newer() {
 }
 
 pre_clean() {
-  rm -rf "${BUILDROOT}/nodes.cache" "${BUILDROOT}/styles" >/dev/null 2>&1 || true
+  rm -rf "${CACHEDIR}"/* >/dev/null 2>&1 || true
+  rm -rf "${TMPDIR}"/* >/dev/null 2>&1 || true
 }
 
 get_planet() {
@@ -102,30 +111,29 @@ get_planet() {
 
 get_landpoly() {
   LOG "downloading land polygons"
-  mkdir -p "${BUILDROOT}/data"
-  wget -N --no-verbose --progress=dot:mega --show-progress -P "${BUILDROOT}/data" \
+  mkdir -p "${DATADIR}"
+  wget -N --no-verbose --progress=dot:mega --show-progress -P "${DATADIR}" \
     http://data.openstreetmapdata.com/simplified-land-polygons-complete-3857.zip
-  wget -N --no-verbose --progress=dot:mega --show-progress -P "${BUILDROOT}/data" \
+  wget -N --no-verbose --progress=dot:mega --show-progress -P "${DATADIR}" \
     http://data.openstreetmapdata.com/land-polygons-split-3857.zip
-  chmod 644 "${BUILDROOT}/data"/*.*
 }
 
 start_database() {
-  su - postgres -c "${PGBIN}/pg_ctl -D '${BUILDROOT}/pg' -w start $*"
+  su - postgres -c "${PGBIN}/pg_ctl -D '${DBDIR}' -w start $*"
 }
 
 stop_database() {
-  su - postgres -c "${PGBIN}/pg_ctl -D '${BUILDROOT}/pg' -w stop -m fast"
+  su - postgres -c "${PGBIN}/pg_ctl -D '${DBDIR}' -w stop -m fast"
 }
 
 init_database() {
-  mkdir -p "${BUILDROOT}/pg"
-  chmod 700 "${BUILDROOT}/pg"
-  chown -R postgres "${BUILDROOT}/pg"
+  mkdir -p "${DBDIR}"
+  chmod 700 "${DBDIR}"
+  chown -R postgres "${DBDIR}"
 
-  if [ ! -e "${BUILDROOT}/pg/PG_VERSION" ]; then
+  if [ ! -e "${DBDIR}/PG_VERSION" ]; then
     LOG "initializing postgres database"
-	  su - postgres -c "${PGBIN}/initdb -E UTF8 -D '${BUILDROOT}/pg'"
+	  su - postgres -c "${PGBIN}/initdb -E UTF8 -D '${DBDIR}'"
 
     start_database
     su - postgres -c "${PGBIN}/createuser --no-superuser --no-createrole --createdb osm"
@@ -138,16 +146,26 @@ init_database() {
     stop_database
   fi
 
-  cp /opt/osm/pg_hba.conf "${BUILDROOT}/pg/"
-  cp /opt/osm/postgres.conf "${BUILDROOT}/pg/"
-  chown postgres "${BUILDROOT}/pg"/*.conf
+  cp /opt/osm/pg_hba.conf "${DBDIR}/"
+  cp /opt/osm/postgres.conf "${DBDIR}/"
+  chown postgres "${DBDIR}"/*.conf
 }
 
 import_planet() {
   if newer planet import; then
-    LOG "importing planet into postgresql"
-    #import_planet_imposm || return 1
-    import_planet_osm2pgsql || return 1
+    LOG "importing planet into postgresql with ${IMPORTER}"
+    case "${IMPORTER}" in
+      osm2pgsql)
+        import_planet_osm2pgsql || return 1
+        ;;
+      imposm)
+        import_planet_imposm || return 1
+        ;;
+      *)
+        FAIL "invalid importer: $IMPORTER"
+        return 1
+        ;;
+    esac
     mark import
   fi
 }
@@ -158,12 +176,11 @@ import_planet_osm2pgsql() {
     --slim \
     --cache=8000 \
     --database=osm \
-    --hstore-all \
-    --hstore-add-index \
+    --multi-geometry \
     --number-processes=${THREADS} \
     --unlogged \
     --cache-strategy=dense \
-    --flat-nodes='${BUILDROOT}/nodes.cache' \
+    --flat-nodes='${CACHEDIR}/nodes.cache' \
     '${PLANETPBF}'"
 }
 
@@ -172,7 +189,7 @@ import_planet_imposm() {
     --connection=postgis:///osm \
     -m /opt/osm/osm-bright/imposm-mapping.py \
     --overwrite-cache \
-    --cache-dir=${BUILDROOT} \
+    --cache-dir=${CACHEDIR} \
     --concurrency=${THREADS} \
     --read \
     --write \
@@ -183,10 +200,10 @@ import_planet_imposm() {
 
 setup_style() {
   LOG "setting up map style"
-  mkdir -p "${BUILDROOT}/styles"
-  (cd /opt/osm/osm-bright && ./make.py install)
-  (cd "${BUILDROOT}/styles/osmbright" && /opt/osm/node_modules/carto/bin/carto -l -n project.mml > project.xml)
-  (cd "${BUILDROOT}/data" && shapeindex *.shp)
+  mkdir -p "${STYLEDIR}"
+  (cd /opt/osm/osm-bright && ./make.py)
+  (cd "${STYLEDIR}/osmbright" && /opt/osm/node_modules/carto/bin/carto -l -n project.mml > project.xml)
+  (cd "${DATADIR}" && shapeindex *.shp)
 }
 
 start_renderer() {
@@ -195,14 +212,11 @@ start_renderer() {
 
 render_tiles() {
   if newer import tiles; then
-    # set $SRC and $DST for tl-render.sh
-    export SRC="${BUILDROOT}/styles/osmbright/project.xml"
-    export DST="${TILEROOT}/osm-bright"
     export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
-    LOG "rendering tiles to: ${DST}"
-    /opt/osm/render-list.pl $MAXZOOM > "${BUILDROOT}/render-list.txt"
+    LOG "rendering tiles to: ${TILEROOT}/osm-bright"
+    /opt/osm/render-list.pl "${MAXZOOM}" > "${TMPDIR}/render-list.txt"
     echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
-    (cd "${BUILDROOT}/styles/osmbright" && su - osm -c "xargs -a '${BUILDROOT}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
+    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'MAPNIK_FONT_PATH=$MAPNIK_FONT_PATH' 'SRC=mapnik://${STYLEDIR}/osmbright/project.xml' 'DST=file://${TILEROOT}/osm-bright' xargs -a '${TMPDIR}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
     mark tiles
   fi
 }
@@ -210,7 +224,7 @@ render_tiles() {
 package_tiles() {
   if newer tiles mbtiles; then
     LOG "packaging tiles to: ${TILEROOT}/osm-bright.mbtiles"
-    /opt/osm/node_modules/tl/bin/tl.js copy -q -z 0 -Z $MAXZOOM file://${TILEROOT}/osm-bright mbtiles://${TILEROOT}/osm-bright.mbtiles
+    /opt/osm/node_modules/tl/bin/tl.js copy -q -z 0 -Z "${MAXZOOM}" "file://${TILEROOT}/osm-bright" "mbtiles://${TILEROOT}/osm-bright.mbtiles"
     mark mbtiles
   fi
 }
@@ -226,7 +240,7 @@ cleanup() {
 
 trap cleanup 0
 
-mkdir -p "${BUILDROOT}"
+mkdir -p "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}" "${STYLEDIR}" "${TMPDIR}"
 
 pre_clean
 get_planet     || ABORT "OSM planet download failed (aborting)"
