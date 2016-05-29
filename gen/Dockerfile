@@ -78,10 +78,6 @@ RUN mkdir -p /export/build /export/tile && chmod 1777 /export/build /export/tile
 VOLUME /export/build
 VOLUME /export/tile
 
-COPY pg_hba.conf /opt/osm/
-COPY postgres.conf /opt/osm/
-COPY render-list.pl /opt/osm/
-COPY tile-gen.sh /opt/osm/
-COPY tl-render.sh /opt/osm/
+COPY *.conf *.pl *.sh /opt/osm/
 
 CMD [ "/opt/osm/tile-gen.sh" ]
