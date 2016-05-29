@@ -210,15 +210,28 @@ start_renderer() {
   true
 }
 
-render_tiles() {
+render_tiles_tl() {
   if newer import tiles; then
     export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
     LOG "rendering tiles to: ${TILEROOT}/osm-bright"
     /opt/osm/render-list.pl "${MAXZOOM}" > "${TMPDIR}/render-list.txt"
     mkdir -p "${TILEROOT}/osm-bright"
     chmod 1777 "${TILEROOT}/osm-bright"
-    echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
+    rm "${TILEROOT}/osm-bright/metadata.json"
     (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'MAPNIK_FONT_PATH=$MAPNIK_FONT_PATH' 'SRC=mapnik://${STYLEDIR}/osmbright/project.xml' 'DST=file://${TILEROOT}/osm-bright' xargs -a '${TMPDIR}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
+    echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
+    mark tiles
+  fi
+}
+
+render_tiles() {
+  if newer import tiles; then
+    export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
+    LOG "rendering tiles to: ${TILEROOT}/osm-bright"
+    mkdir -p "${TILEROOT}/osm-bright"
+    chmod 1777 "${TILEROOT}/osm-bright"
+    rm "${TILEROOT}/osm-bright/metadata.json"
+    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' ${TILEROOT}/osm-bright.mbtiles")
     echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
     mark tiles
   fi
