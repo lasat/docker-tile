@@ -22,7 +22,7 @@ lon0=`xtile2long $zoom $col0`
 lon1=`xtile2long $zoom $col1`
 
 ts=`date '+%s'`
-$tl copy -q -z $zoom -Z $zoom -b "$lon0 $lat0 $lon1 $lat1" "$SRC" "$DST" || exit 1
+$tl copy -q -z $zoom -Z $zoom -b "$lon0 $lat0 $lon1 $lat1" "${SRC}?metatile=8" "$DST" || exit 1
 ts2=`date '+%s'`
 rate=`perl -e "print((2**$zoom)*($col1-$col0)/($ts2-$ts))"`
 echo "==> Completed $zoom:$col0:$col1 @ $rate tiles/sec" >&2
