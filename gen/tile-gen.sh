@@ -91,6 +91,9 @@ pre_clean() {
 
 get_planet() {
   if [ -n "$SKIP_PLANET" ]; then
+    if [ ! -e "${BUILDROOT}/.ts.planet" ]; then
+      mark planet
+    fi
     return 0
   fi
   TMPFILE=`mktemp "${PLANETPBF}.XXXXXX"`
