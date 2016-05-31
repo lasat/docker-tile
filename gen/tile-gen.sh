@@ -197,6 +197,7 @@ import_planet_imposm() {
     --remove-backup-tables \
     '${PLANETPBF}'" || true
   if newer planet import.read; then
+    LOG "importing planet -- read"
     su - osm -c "time imposm \
       --connection=postgis:///osm \
       -m /opt/osm/osm-bright/imposm-mapping.py \
@@ -208,6 +209,7 @@ import_planet_imposm() {
     mark import.read
   fi
   if newer import.read import.write; then
+    LOG "importing planet -- write"
     su - osm -c "time imposm \
       --connection=postgis:///osm \
       -m /opt/osm/osm-bright/imposm-mapping.py \
@@ -219,7 +221,9 @@ import_planet_imposm() {
     mark import.write
   fi
   if newer import.write import.optimize; then
+    LOG "importing planet -- vacuum"
     su - postgres -c "time ${PGBIN}/vacuumdb -j ${THREADS} osm" || true
+    LOG "importing planet -- optimize"
     su - osm -c "time imposm \
       --connection=postgis:///osm \
       -m /opt/osm/osm-bright/imposm-mapping.py \
@@ -230,6 +234,7 @@ import_planet_imposm() {
       '${PLANETPBF}'" || FAIL "could not optimize database on import"
     mark import.optimize
   fi
+  LOG "importing planet -- deploy"
   su - osm -c "time imposm \
     --connection=postgis:///osm \
     -m /opt/osm/osm-bright/imposm-mapping.py \
