@@ -30,9 +30,10 @@ umask 022
 
 export BUILDROOT="${BUILDROOT:-/export/build}"
 export TILEROOT="${TILEROOT:-/export/tile}"
-export CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"
+export CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"  # Needs >= 1.1*planet.pbf size
 export DATADIR="${STYLEDIR:-${BUILDROOT}/data}"
-export DBDIR="${DBDIR:-${BUILDROOT}/pg}"
+export DBDIR="${DBDIR:-${BUILDROOT}/pg}"           # Needs >= 4.4*planet.pbf size
+export DBTMPDIR="${DBDIR:-${CACHEDIR}/pg_temp}"
 export STYLEDIR="${STYLEDIR:-${BUILDROOT}/styles}"
 export TMPDIR="${TMPDIR:-${CACHEDIR}}"
 
@@ -127,15 +128,16 @@ stop_database() {
 }
 
 init_database() {
-  mkdir -p "${DBDIR}"
-  chmod 700 "${DBDIR}"
-  chown -R postgres "${DBDIR}"
+  mkdir -p "${DBDIR}" "${DBTMPDIR}"
+  chmod 700 "${DBDIR}" "${DBTMPDIR}"
+  chown -R postgres "${DBDIR}" "${DBTMPDIR}"
 
   if [ ! -e "${DBDIR}/PG_VERSION" ]; then
     LOG "initializing postgres database"
 	  su - postgres -c "${PGBIN}/initdb -E UTF8 -D '${DBDIR}'"
 
     start_database
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE ephemeral LOCATION '${DBTMPDIR}';\""
     su - postgres -c "${PGBIN}/createuser --no-superuser --no-createrole --createdb osm"
     su - postgres -c "${PGBIN}/createdb -E UTF8 -O osm osm"
     su - postgres -c "${PGBIN}/createlang plpgsql osm"
@@ -147,7 +149,8 @@ init_database() {
   fi
 
   cp /opt/osm/pg_hba.conf "${DBDIR}/"
-  cp /opt/osm/postgres.conf "${DBDIR}/"
+  cp /opt/osm/postgresql.conf "${DBDIR}/"
+  echo "temp_tablespace = 'ephemeral'" >> "${DBDIR}/postgresql.conf"
   chown postgres "${DBDIR}"/*.conf
 }
 
@@ -191,11 +194,52 @@ import_planet_imposm() {
     --overwrite-cache \
     --cache-dir=${CACHEDIR} \
     --concurrency=${THREADS} \
-    --read \
-    --write \
-    --optimize \
+    --remove-backup-tables \
+    '${PLANETPBF}'" || true
+  if newer planet import.read; then
+    su - osm -c "time imposm \
+      --connection=postgis:///osm \
+      -m /opt/osm/osm-bright/imposm-mapping.py \
+      --overwrite-cache \
+      --cache-dir=${CACHEDIR} \
+      --concurrency=${THREADS} \
+      --read \
+      '${PLANETPBF}'" || return 1
+    mark import.read
+  fi
+  if newer import.read import.write; then
+    su - osm -c "time imposm \
+      --connection=postgis:///osm \
+      -m /opt/osm/osm-bright/imposm-mapping.py \
+      --overwrite-cache \
+      --cache-dir=${CACHEDIR} \
+      --concurrency=${THREADS} \
+      --write \
+      '${PLANETPBF}'" || return 1
+    mark import.write
+  fi
+  if newer import.write import.optimize; then
+    su - postgres -c "time ${PGBIN}/vacuumdb -j ${THREADS} osm" || true
+    su - osm -c "time imposm \
+      --connection=postgis:///osm \
+      -m /opt/osm/osm-bright/imposm-mapping.py \
+      --overwrite-cache \
+      --cache-dir=${CACHEDIR} \
+      --concurrency=${THREADS} \
+      --optimize \
+      '${PLANETPBF}'" || FAIL "could not optimize database on import"
+    mark import.optimize
+  fi
+  su - osm -c "time imposm \
+    --connection=postgis:///osm \
+    -m /opt/osm/osm-bright/imposm-mapping.py \
+    --overwrite-cache \
+    --cache-dir=${CACHEDIR} \
+    --concurrency=${THREADS} \
     --deploy-production-tables \
-    '${PLANETPBF}'"
+    '${PLANETPBF}'" || return 1
+  mark import.deploy
+  return 0
 }
 
 setup_style() {
@@ -207,6 +251,10 @@ setup_style() {
 }
 
 start_renderer() {
+  true
+}
+
+stop_renderer() {
   true
 }
 
@@ -222,22 +270,6 @@ render_tiles_tl() {
     echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
     mark tiles
   fi
-}
-
-render_tiles() {
-  if newer import tiles; then
-    export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
-    LOG "rendering tiles to: ${TILEROOT}/osm-bright"
-    mkdir -p "${TILEROOT}/osm-bright"
-    chmod 1777 "${TILEROOT}/osm-bright"
-    rm "${TILEROOT}/osm-bright/metadata.json"
-    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' ${TILEROOT}/osm-bright.mbtiles")
-    echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
-    mark tiles
-  fi
-}
-
-package_tiles() {
   if newer tiles mbtiles; then
     LOG "packaging tiles to: ${TILEROOT}/osm-bright.mbtiles"
     /opt/osm/node_modules/tl/bin/tl.js copy -q -z 0 -Z "${MAXZOOM}" "file://${TILEROOT}/osm-bright" "mbtiles://${TILEROOT}/osm-bright.mbtiles"
@@ -245,18 +277,29 @@ package_tiles() {
   fi
 }
 
+render_tiles() {
+  if newer import tiles; then
+    export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
+    LOG "rendering tiles to: ${TILEROOT}/osm-bright.mbtiles"
+    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'")
+    mark tiles
+  fi
+}
+
 cleanup() {
   LOG "cleaning up"
   if [ -n "$TMPFILE" ]; then
-    rm -f "$TMPFILE" 2>/dev/null
+    rm -f "$TMPFILE" 2>/dev/null || true
     TMPFILE=""
   fi
-  stop_database
+  stop_renderer || true
+  stop_database || true
 }
 
 trap cleanup 0
 
-mkdir -p "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}" "${STYLEDIR}" "${TMPDIR}"
+mkdir -p "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}" "${STYLEDIR}" "${TMPDIR}" "${DBTMPDIR}"
+chmod 1777 "${CACHEDIR}" "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}" "${STYLEDIR}" "${TMPDIR}" "${DBTMPDIR}"
 
 pre_clean
 get_planet     || ABORT "OSM planet download failed (aborting)"
@@ -266,16 +309,6 @@ init_database  || ABORT "database initialization failed (aborting)"
 start_database || ABORT "database startup failed (aborting)"
 import_planet  || ABORT "OSM planet import failed (aborting)"
 start_renderer || ABORT "render daemon startup failed (aborting)"
-if ! render_tiles; then
-  STATUS=1
-  FAIL "tile rendering failed/incomplete (continuing)"
-else
-  STATUS=1
-fi
-package_tiles  || ABORT "tile packaging failed (aborting)"
-if [ $STATUS = 0 ]; then
-  LOG "tile generation completed successfully"
-else
-  LOG "tile generation completed with errors"
-fi
-exit $STATUS
+render_tiles   || ABORT "tile rendering failed/incomplete (aborting)"
+stop_renderer
+exit 0
