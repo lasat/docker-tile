@@ -33,7 +33,7 @@ export TILEROOT="${TILEROOT:-/export/tile}"
 export CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"  # Needs >= 1.1*planet.pbf size
 export DATADIR="${STYLEDIR:-${BUILDROOT}/data}"
 export DBDIR="${DBDIR:-${BUILDROOT}/pg}"           # Needs >= 4.4*planet.pbf size
-export DBTMPDIR="${DBDIR:-${CACHEDIR}/pg_temp}"
+export DBTMPDIR="${DBTMPDIR:-${CACHEDIR}/pg_temp}"
 export STYLEDIR="${STYLEDIR:-${BUILDROOT}/styles}"
 export TMPDIR="${TMPDIR:-${CACHEDIR}}"
 
@@ -140,7 +140,8 @@ init_database() {
 	  su - postgres -c "${PGBIN}/initdb -E UTF8 -D '${DBDIR}'"
 
     start_database
-    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE ephemeral LOCATION '${DBTMPDIR}';\""
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c 'DROP TABLESPACE tmpspace;'" || true
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}';\""
     su - postgres -c "${PGBIN}/createuser --no-superuser --no-createrole --createdb osm"
     su - postgres -c "${PGBIN}/createdb -E UTF8 -O osm osm"
     su - postgres -c "${PGBIN}/createlang plpgsql osm"
@@ -148,6 +149,11 @@ init_database() {
     su - postgres -c "${PGBIN}/psql -q -b -d osm -f /usr/share/postgresql/9.5/contrib/postgis-2.2/postgis.sql"
     su - postgres -c "${PGBIN}/psql -q -b -d osm -f /usr/share/postgresql/9.5/contrib/postgis-2.2/spatial_ref_sys.sql"
     su - postgres -c "${PGBIN}/psql -q -b -d osm -f /usr/lib/python2.7/dist-packages/imposm/900913.sql"
+    stop_database
+  else
+    start_database
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c 'DROP TABLESPACE tmpspace;'" || true
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}';\""
     stop_database
   fi
 
@@ -228,6 +234,7 @@ import_planet_imposm() {
     su - postgres -c "time ${PGBIN}/vacuumdb -j ${THREADS} osm" || true
     LOG "importing planet -- optimize"
     su - osm -c "time imposm \
+      --debug \
       --connection=postgis:///osm \
       -m /opt/osm/osm-bright/imposm-mapping.py \
       --overwrite-cache \
@@ -289,7 +296,7 @@ render_tiles() {
   if newer import tiles; then
     export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
     LOG "rendering tiles to: ${TILEROOT}/osm-bright.mbtiles"
-    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'")
+    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --minzoom=0 --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'")
     mark tiles
   fi
 }
