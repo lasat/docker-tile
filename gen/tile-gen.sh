@@ -142,7 +142,7 @@ init_database() {
 
     start_database
     su - postgres -c "${PGBIN}/psql -q -b -d osm -c 'DROP TABLESPACE tmpspace;'" || true
-    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}';\""
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}'; GRANT CREATE ON TABLESPACE tmpspace TO osm;\""
     su - postgres -c "${PGBIN}/createuser --no-superuser --no-createrole --createdb osm"
     su - postgres -c "${PGBIN}/createdb -E UTF8 -O osm osm"
     su - postgres -c "${PGBIN}/createlang plpgsql osm"
@@ -154,7 +154,7 @@ init_database() {
   else
     start_database
     su - postgres -c "${PGBIN}/psql -q -b -d osm -c 'DROP TABLESPACE tmpspace;'" || true
-    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}';\""
+    su - postgres -c "${PGBIN}/psql -q -b -d osm -c \"CREATE TABLESPACE tmpspace LOCATION '${DBTMPDIR}'; GRANT CREATE ON TABLESPACE tmpspace TO osm;\""
     stop_database
   fi
 
