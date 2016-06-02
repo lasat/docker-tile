@@ -16,6 +16,7 @@ RUN \
 	a2ensite tiles
 
 COPY tilestache.wsgi /var/www/
+RUN mkdir -p /var/www/html/javascript/modestmaps && wget -P /var/www/html/javascript/modestmaps https://raw.github.com/modestmaps/modestmaps-js/master/modestmaps.min.js
 
 VOLUME /export/tile
 
