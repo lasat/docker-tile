@@ -7,7 +7,7 @@ RUN echo 'deb http://ppa.launchpad.net/ubuntugis/ppa/ubuntu trusty main' >> /etc
 RUN mkdir -p /export/geo
 COPY tilestache.json /etc/tilestache.cfg
 
-RUN apt-get update && apt-get install -y apache2 libapache2-mod-wsgi
+RUN apt-get update && apt-get install -y apache2 libapache2-mod-wsgi && rm -f /var/www/html/index.html
 COPY tiles.conf /etc/apache2/sites-available/tiles.conf
 RUN \
 	a2dismod -f autoindex && \
