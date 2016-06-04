@@ -267,11 +267,12 @@ setup_style() {
 }
 
 start_renderer() {
+  (cd "${STYLEDIR}/osmbright" && su - osm -c "/opt/osm/node_modules/tessera/bin/tessera.js -p 8888 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8'") &
   true
 }
 
 stop_renderer() {
-  true
+  pkill -TERM node || true
 }
 
 render_tiles_tl() {
