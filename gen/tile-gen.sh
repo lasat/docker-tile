@@ -297,18 +297,7 @@ render_tiles() {
   if newer import tiles; then
     export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
     LOG "rendering tiles to: ${TILEROOT}/osm-bright.mbtiles"
-    local err=0
-    local part=0
-    local parts=1000
-    while [ $part -lt $parts ]; do
-      LOG "rendering tiles: part $part of $parts"
-      (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --parts=$parts --part=$part --minzoom=${MINZOOM} --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'")
-      if [ $? != 0 ]; then
-        err=1
-        LOG "rendering tiles: part $part of $parts ... FAILED"
-      fi
-      part=`expr $part + 1`
-    done
+    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --minzoom=${MINZOOM} --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'") || return 1
     mark tiles
   fi
 }
