@@ -1,0 +1,17 @@
+BUILDROOT="${BUILDROOT:-/export/build}"
+TILEROOT="${TILEROOT:-/export/tile}"
+
+CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"  # Needs >= 1.1*planet.pbf size
+DATADIR="${STYLEDIR:-${BUILDROOT}/data}"
+DBDIR="${DBDIR:-${BUILDROOT}/pg}"           # Needs >= 4.4*planet.pbf size
+DBTMPDIR="${DBTMPDIR:-${CACHEDIR}/pg_temp}"
+STYLEDIR="${STYLEDIR:-${BUILDROOT}/styles}"
+TMPDIR="${TMPDIR:-${CACHEDIR}}"
+
+IMPORTER="${IMPORTER:-imposm}"
+THREADS="${THREADS:-8}"
+MINZOOM="${MINZOOM:-0}"
+MAXZOOM="${MAXZOOM:-12}"
+
+MIRROR="${MIRROR:-http://ftp.osuosl.org/pub/openstreetmap/pbf/planet-latest.osm.pbf}"
+PLANETPBF="${PLANETPBF:-${BUILDROOT}/planet-latest.osm.pbf}"

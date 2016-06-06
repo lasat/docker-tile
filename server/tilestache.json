@@ -2,7 +2,7 @@
   "cache": { "name": "Test" },
   "layers": {
     "osm": {
-      "provider": {"name": "mbtiles", "tileset": "/export/tile/osm-bright.mbtiles"},
+      "provider": {"name": "mbtiles", "tileset": "/export/tile/osmbright.mbtiles"},
       "projection": "spherical mercator",
       "allowed origin": "*",
       "maximum cache age": 604800

@@ -5,7 +5,7 @@ from collections import defaultdict
 config = defaultdict(defaultdict)
 
 config['importer'] = getenv('IMPORTER', 'osm2pgsql')
-config['name'] = 'osm-bright'
+config['name'] = 'osmbright'
 config['path'] = getenv('STYLEDIR', '/export/build/styles')
 config['postgis']['host']     = ''
 config['postgis']['port']     = ''

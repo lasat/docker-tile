@@ -63,21 +63,11 @@ RUN npm install -g npm@~3.3.12
 COPY package.json /opt/osm/
 RUN su - osm -c "npm install"
 
-RUN mkdir -p /opt/osm/osm-bright
-COPY configure.py /opt/osm/osm-bright/
-RUN \
-  mkdir -p /opt/osm/osm-bright && \
-  wget -O - https://github.com/mapbox/osm-bright/archive/3757b1a399102ac60f03541156fd183d68df14d9.tar.gz | \
-    tar -zxf - --strip=1 -C /opt/osm/osm-bright && \
-  perl -pi -e 's/"DejaVu Sans (Bold )?Italic",//g;s/"unifont Medium"/"Unifont Medium"/g;' /opt/osm/osm-bright/osm-bright/palette.mss && \
-  (cd /opt/osm/osm-bright && ./make.py build) && \
-  chown -R osm /opt/osm/osm-bright
-
 RUN mkdir -p /export/build /export/tile && chmod 1777 /export/build /export/tile
 
 VOLUME /export/build
 VOLUME /export/tile
 
-COPY *.conf *.pl *.sh /opt/osm/
+COPY *.conf *.pl *.sh *.py /opt/osm/
 
 CMD [ "/opt/osm/tile-gen.sh" ]

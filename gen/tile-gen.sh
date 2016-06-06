@@ -28,6 +28,8 @@ set -x
 
 umask 022
 
+test -e /opt/osm/tile-gen.conf && . /opt/osm/tile-gen.conf
+
 export BUILDROOT="${BUILDROOT:-/export/build}"
 export TILEROOT="${TILEROOT:-/export/tile}"
 export CACHEDIR="${CACHEDIR:-${BUILDROOT}/cache}"  # Needs >= 1.1*planet.pbf size
@@ -45,6 +47,11 @@ export MAXZOOM="${MAXZOOM:-12}"
 MIRROR="${MIRROR:-http://ftp.osuosl.org/pub/openstreetmap/pbf/planet-latest.osm.pbf}"
 PLANETPBF="${PLANETPBF:-${BUILDROOT}/planet-latest.osm.pbf}"
 PGBIN="${PGBIN:-/usr/lib/postgresql/9.5/bin}"
+
+test -e /opt/osm/tile-style.sh && . /opt/osm/tile-style.sh
+
+STYLE_NAME="${STYLE_NAME:-osmbright}"
+STYLE_URL="${STYLE_URL:-mapnik://${STYLEDIR}/${STYLE_NAME}/project.xml?metatile=8}"
 
 TMPFILE=""
 
@@ -114,15 +121,6 @@ get_planet() {
   fi
 }
 
-get_landpoly() {
-  LOG "downloading land polygons"
-  mkdir -p "${DATADIR}"
-  wget -N --no-verbose --progress=dot:mega --show-progress -P "${DATADIR}" \
-    http://data.openstreetmapdata.com/simplified-land-polygons-complete-3857.zip
-  wget -N --no-verbose --progress=dot:mega --show-progress -P "${DATADIR}" \
-    http://data.openstreetmapdata.com/land-polygons-split-3857.zip
-}
-
 start_database() {
   su - postgres -c "${PGBIN}/pg_ctl -D '${DBDIR}' -w start $*"
 }
@@ -189,23 +187,25 @@ import_planet() {
 }
 
 import_planet_osm2pgsql() {
+  OSM2PGSQL_FLAGS="${OSM2PGSQL_FLAGS:---multi-geometry}"
   su - osm -c "time osm2pgsql \
     --create \
     --slim \
     --cache=8000 \
     --database=osm \
-    --multi-geometry \
     --number-processes=${THREADS} \
     --unlogged \
     --cache-strategy=dense \
     --flat-nodes='${CACHEDIR}/nodes.cache' \
+    ${OSM2PGSQL_FLAGS} \
     '${PLANETPBF}'"
 }
 
 import_planet_imposm() {
+  IMPOSM_MAPPING="${IMPOSM_MAPPING:-${STYLEDIR}/${STYLE_NAME}/imposm-mapping.py}"
   su - osm -c "time imposm \
     --connection=postgis:///osm \
-    -m /opt/osm/osm-bright/imposm-mapping.py \
+    -m '${IMPOSM_MAPPING}' \
     --overwrite-cache \
     --cache-dir=${CACHEDIR} \
     --concurrency=${THREADS} \
@@ -215,7 +215,7 @@ import_planet_imposm() {
     LOG "importing planet -- read"
     su - osm -c "time imposm \
       --connection=postgis:///osm \
-      -m /opt/osm/osm-bright/imposm-mapping.py \
+      -m '${IMPOSM_MAPPING}' \
       --overwrite-cache \
       --cache-dir=${CACHEDIR} \
       --concurrency=${THREADS} \
@@ -227,7 +227,7 @@ import_planet_imposm() {
     LOG "importing planet -- write"
     su - osm -c "time imposm \
       --connection=postgis:///osm \
-      -m /opt/osm/osm-bright/imposm-mapping.py \
+      -m '${IMPOSM_MAPPING}' \
       --overwrite-cache \
       --cache-dir=${CACHEDIR} \
       --concurrency=${THREADS} \
@@ -242,7 +242,7 @@ import_planet_imposm() {
     su - osm -c "time imposm \
       --debug \
       --connection=postgis:///osm \
-      -m /opt/osm/osm-bright/imposm-mapping.py \
+      -m '${IMPOSM_MAPPING}' \
       --overwrite-cache \
       --cache-dir=${CACHEDIR} \
       --concurrency=${THREADS} \
@@ -253,7 +253,7 @@ import_planet_imposm() {
   LOG "importing planet -- deploy"
   su - osm -c "time imposm \
     --connection=postgis:///osm \
-    -m /opt/osm/osm-bright/imposm-mapping.py \
+    -m '${IMPOSM_MAPPING}' \
     --overwrite-cache \
     --cache-dir=${CACHEDIR} \
     --concurrency=${THREADS} \
@@ -263,16 +263,8 @@ import_planet_imposm() {
   return 0
 }
 
-setup_style() {
-  LOG "setting up map style"
-  mkdir -p "${STYLEDIR}"
-  (cd /opt/osm/osm-bright && ./make.py) || return 1
-  (cd "${STYLEDIR}/osmbright" && /opt/osm/node_modules/carto/bin/carto -l -n project.mml > project.xml) || return 1
-  (cd "${DATADIR}" && shapeindex *.shp) || return 1
-}
-
 start_renderer() {
-  (cd "${STYLEDIR}/osmbright" && su - osm -c "/opt/osm/node_modules/tessera/bin/tessera.js -p 8888 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8'") &
+  (cd "${STYLEDIR}/${STYLE_NAME}" && su - osm -c "/opt/osm/node_modules/tessera/bin/tessera.js -p 8888 '${STYLE_URL}'") &
   true
 }
 
@@ -282,28 +274,26 @@ stop_renderer() {
 
 render_tiles_tl() {
   if newer import tiles; then
-    export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
-    LOG "rendering tiles to: ${TILEROOT}/osm-bright"
+    LOG "rendering tiles to: ${TILEROOT}/${STYLE_NAME}"
     /opt/osm/render-list.pl "${MAXZOOM}" > "${TMPDIR}/render-list.txt"
-    mkdir -p "${TILEROOT}/osm-bright"
-    chmod 1777 "${TILEROOT}/osm-bright"
-    rm "${TILEROOT}/osm-bright/metadata.json"
-    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'MAPNIK_FONT_PATH=$MAPNIK_FONT_PATH' 'SRC=mapnik://${STYLEDIR}/osmbright/project.xml' 'DST=file://${TILEROOT}/osm-bright' xargs -a '${TMPDIR}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
-    echo "{\"minzoom\":0,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/osm-bright/metadata.json"
+    mkdir -p "${TILEROOT}/${STYLE_NAME}"
+    chmod 1777 "${TILEROOT}/${STYLE_NAME}"
+    rm "${TILEROOT}/${STYLE_NAME}/metadata.json"
+    (cd "${STYLEDIR}/${STYLE_NAME}" && su - osm -c "env 'MAPNIK_FONT_PATH=$MAPNIK_FONT_PATH' 'SRC=${STYLE_URL}' 'DST=file://${TILEROOT}/${STYLE_NAME}' xargs -a '${TMPDIR}/render-list.txt' -n 1 -P ${THREADS} /opt/osm/tl-render.sh") || return 1
+    echo "{\"minzoom\":$MINZOOM,\"maxzoom\":$MAXZOOM,\"bounds\":[-180,-85.0511,180,85.0511]}" > "${TILEROOT}/${STYLE_NAME}/metadata.json"
     mark tiles
   fi
   if newer tiles mbtiles; then
-    LOG "packaging tiles to: ${TILEROOT}/osm-bright.mbtiles"
-    /opt/osm/node_modules/tl/bin/tl.js copy -q -z 0 -Z "${MAXZOOM}" "file://${TILEROOT}/osm-bright" "mbtiles://${TILEROOT}/osm-bright.mbtiles"
+    LOG "packaging tiles to: ${TILEROOT}/${STYLE_NAME}.mbtiles"
+    /opt/osm/node_modules/tl/bin/tl.js copy -q -z "${MINZOOM}" -Z "${MAXZOOM}" "file://${TILEROOT}/${STYLE_NAME}" "mbtiles://${TILEROOT}/${STYLE_NAME}.mbtiles"
     mark mbtiles
   fi
 }
 
 render_tiles() {
   if newer import tiles; then
-    export MAPNIK_FONT_PATH=`find /usr/share/fonts -type d | env LC_ALL=C sort | tr '\n' ':'`
-    LOG "rendering tiles to: ${TILEROOT}/osm-bright.mbtiles"
-    (cd "${STYLEDIR}/osmbright" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --minzoom=${MINZOOM} --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 'mapnik://${STYLEDIR}/osmbright/project.xml?metatile=8' '${TILEROOT}/osm-bright.mbtiles'") || return 1
+    LOG "rendering tiles to: ${TILEROOT}/${STYLE_NAME}.mbtiles"
+    (cd "${STYLEDIR}/${STYLE_NAME}" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --minzoom=${MINZOOM} --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 '${STYLE_URL}' '${TILEROOT}/${STYLE_NAME}.mbtiles'") || return 1
     mark tiles
   fi
 }
@@ -325,12 +315,12 @@ chmod 1777 "${CACHEDIR}" "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}"
 
 pre_clean
 get_planet     || ABORT "OSM planet download failed (aborting)"
-get_landpoly   || ABORT "land/admin data download failed (aborting)"
 setup_style    || ABORT "style pre-processing failed (aborting)"
 init_database  || ABORT "database initialization failed (aborting)"
 start_database || ABORT "database startup failed (aborting)"
 import_planet  || ABORT "OSM planet import failed (aborting)"
 start_renderer || ABORT "render daemon startup failed (aborting)"
 render_tiles   || ABORT "tile rendering failed/incomplete (aborting)"
+LOG "complete"
 stop_renderer
 exit 0
