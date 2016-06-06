@@ -132,6 +132,11 @@ stop_database() {
 }
 
 init_database() {
+  if newer planet import; then
+    LOG "removing old database"
+    rm -rf "${DBDIR}" "${DBTMPDIR}" || true
+  fi
+
   mkdir -p "${DBDIR}" "${DBTMPDIR}"
   chmod 700 "${DBDIR}" "${DBTMPDIR}"
   chown -R postgres "${DBDIR}" "${DBTMPDIR}"
