@@ -315,9 +315,9 @@ chmod 1777 "${CACHEDIR}" "${BUILDROOT}" "${TILEROOT}" "${CACHEDIR}" "${DATADIR}"
 
 pre_clean
 get_planet     || ABORT "OSM planet download failed (aborting)"
-setup_style    || ABORT "style pre-processing failed (aborting)"
 init_database  || ABORT "database initialization failed (aborting)"
 start_database || ABORT "database startup failed (aborting)"
+setup_style    || ABORT "style pre-processing failed (aborting)"
 import_planet  || ABORT "OSM planet import failed (aborting)"
 start_renderer || ABORT "render daemon startup failed (aborting)"
 render_tiles   || ABORT "tile rendering failed/incomplete (aborting)"
