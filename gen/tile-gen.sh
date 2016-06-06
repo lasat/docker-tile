@@ -160,7 +160,7 @@ init_database() {
 
   cp /opt/osm/pg_hba.conf "${DBDIR}/"
   cp /opt/osm/postgresql.conf "${DBDIR}/"
-  echo "temp_tablespaces = 'ephemeral'" >> "${DBDIR}/postgresql.conf"
+  echo "temp_tablespaces = 'tmpspace'" >> "${DBDIR}/postgresql.conf"
   chown postgres "${DBDIR}"/*.conf
 }
 
