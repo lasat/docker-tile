@@ -20,7 +20,9 @@ RUN apt-get update && apt-get install -y wget && \
 	mkdir -p /var/www/html/javascript/modestmaps && \
 	wget -P /var/www/html/javascript/modestmaps https://raw.github.com/modestmaps/modestmaps-js/master/modestmaps.min.js
 
+COPY start-apache.sh /usr/bin/start-apache
+
 VOLUME /export/tile
 
 EXPOSE 80
-CMD ["/usr/sbin/apache2ctl", "-D", "FOREGROUND"]
+CMD ["/usr/bin/start-apache"]
