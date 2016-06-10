@@ -1,15 +1,27 @@
 #!/bin/sh
 
-tg=tile/tg:latest
-ts=tile/ts:latest
+tg=tile/tg
+ts=tile/ts
 
 nproc=`nproc`
 THREADS=`perl -e '$n=int($ARGV[0]*0.75); print $n > 0 ? $n : 1'`
 
+status() {
+  docker ps -a
+
+  echo ""
+  echo "==> A"
+  cat /export/tile-a/status.txt
+  echo ""
+  echo "==> B"
+  cat /export/tile-b/status.txt
+}
+
 build() {
   test -d /export/tile-"$1" || return 1
-  docker run -d --rm \
-    --name gen \
+  docker rm gen-"$1"
+  docker run -d \
+    --name gen-"$1" \
     -v /export/scratch:/export/scratch \
     -v /export/tile-"$1":/export/tile \
     -v /export/build:/export/build \
@@ -34,7 +46,7 @@ serve() {
 stop() {
   case "$1" in
     build)
-      docker stop gen
+      docker stop gen-a gen-b gen
       ;;
     *)
       docker stop tile-"$1"
@@ -43,22 +55,36 @@ stop() {
 }
 
 clean() {
-  docker stop build tile-a tile-b
-  docker rm build tile-a tile-b
+  docker stop gen gen-a gen-b tile-a tile-b
+  docker rm gen gen-a gen-b tile-a tile-b
   rm -rf /export/build/* /export/scratch/*
 }
 
 usage() {
   cat - <<EOF >&2
 usage:
+  # show quick status
+  sudo tile status
+
+  # build new tiles for "a" or "b" data set
   sudo tile build { a, b }
+
+  # create & start server for "a" or "b" data set
   sudo serve { a, b }
-  sudo stop { build, a, b }
+
+  # force shutdown of build process
+  sudo stop build
+
+  # force shutdown of "a" or "b" server
+  sudo stop a b
+
+  # clean up (remove) build and server containers
   sudo clean
 EOF
+}
 
 case "$1" in
-  build|serve|stop|clean)
+  status|build|serve|stop|clean)
     "$1" "$@"
     ;;
   *)
