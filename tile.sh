@@ -49,7 +49,7 @@ stop() {
       docker stop gen-a gen-b gen
       ;;
     *)
-      docker stop tile-"$1"
+      docker stop tile-"$2"
       ;;
   esac
 }
