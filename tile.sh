@@ -19,7 +19,7 @@ status() {
 
 build() {
   test -d /export/tile-"$1" || return 1
-  docker rm gen-"$1"
+  docker rm gen-"$1" 2>/dev/null
   docker run -d \
     --name gen-"$1" \
     -v /export/scratch:/export/scratch \
@@ -57,7 +57,7 @@ stop() {
 clean() {
   docker stop gen gen-a gen-b tile-a tile-b
   docker rm gen gen-a gen-b tile-a tile-b
-  rm -rf /export/build/* /export/build/.??* /export/scratch/*
+  sudo rm -rf /export/build/* /export/build/.??* /export/scratch/*
 }
 
 usage() {
@@ -84,8 +84,16 @@ EOF
 }
 
 case "$1" in
-  status|build|serve|stop|clean)
+  status)
     "$@"
+    ;;
+  build|serve|stop|clean)
+    "$@"
+    if [ $? = 0 ];then
+      echo OK
+    else
+      echo ERROR
+    fi
     ;;
   *)
     usage
