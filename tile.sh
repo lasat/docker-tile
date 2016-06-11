@@ -4,7 +4,7 @@ tg=tile/tg
 ts=tile/ts
 
 nproc=`nproc`
-THREADS=`perl -e '$n=int($ARGV[0]*0.75); print $n > 0 ? $n : 1'`
+THREADS=`perl -e '$n=int($ARGV[0]*0.75); print $n > 0 ? $n : 1' $nproc`
 
 status() {
   docker ps -a
@@ -57,35 +57,35 @@ stop() {
 clean() {
   docker stop gen gen-a gen-b tile-a tile-b
   docker rm gen gen-a gen-b tile-a tile-b
-  rm -rf /export/build/* /export/scratch/*
+  rm -rf /export/build/* /export/build/.??* /export/scratch/*
 }
 
 usage() {
   cat - <<EOF >&2
 usage:
   # show quick status
-  sudo tile status
+  tile status
 
   # build new tiles for "a" or "b" data set
-  sudo tile build { a, b }
+  tile build { a, b }
 
   # create & start server for "a" or "b" data set
-  sudo serve { a, b }
+  tile serve { a, b }
 
   # force shutdown of build process
-  sudo stop build
+  tile stop build
 
   # force shutdown of "a" or "b" server
-  sudo stop a b
+  tile stop a b
 
   # clean up (remove) build and server containers
-  sudo clean
+  tile clean
 EOF
 }
 
 case "$1" in
   status|build|serve|stop|clean)
-    "$1" "$@"
+    "$@"
     ;;
   *)
     usage
