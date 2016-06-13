@@ -293,6 +293,7 @@ render_tiles_tl() {
 render_tiles() {
   if newer import tiles; then
     LOG "rendering tiles to: ${TILEROOT}/${STYLE_NAME}.mbtiles"
+    rm "${TILEROOT}/${STYLE_NAME}.mbtiles"
     (cd "${STYLEDIR}/${STYLE_NAME}" && su - osm -c "env 'UV_THREADPOOL_SIZE=32' /opt/osm/node_modules/tilelive/bin/tilelive-copy --minzoom=${MINZOOM} --maxzoom=${MAXZOOM} --concurrency=${THREADS} --retry=1000 --withoutprogress --timeout=900000 '${STYLE_URL}' '${TILEROOT}/${STYLE_NAME}.mbtiles'") || return 1
     mark tiles
   fi
