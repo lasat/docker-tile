@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y wget && \
 
 COPY start-apache.sh /usr/bin/start-apache
 
+RUN sed -i 's/%a/%a,/' /usr/lib/python2.7/dist-packages/TileStache/__init__.py
+
 VOLUME /export/tile
 
 EXPOSE 80
